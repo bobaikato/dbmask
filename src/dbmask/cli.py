@@ -68,8 +68,13 @@ def scan(config_path: str, as_json: bool) -> None:
 def mask(config_path: str, apply: bool) -> None:
     """Mask sensitive columns. Dry-run preview unless --apply is given."""
     config = _load(config_path)
-    if apply:
-        config.masking.dry_run = False
+    # The CLI flag is the single source of truth for write access. Without
+    # --apply this is ALWAYS a dry run — even if the YAML says
+    # `masking.dry_run: false`. (Config-level dry_run still exists for library
+    # users driving MaskingEngine/Runner directly.) Previously the flag only
+    # switched dry-run OFF, so a config with `dry_run: false` wrote to the
+    # database while the CLI printed "DRY-RUN (no changes written)".
+    config.masking.dry_run = not apply
 
     with Runner(config) as runner:
         results = runner.mask()
