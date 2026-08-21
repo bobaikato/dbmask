@@ -58,14 +58,25 @@ def scan(config_path: str, as_json: bool) -> None:
         click.echo(f"By source        : {s.by_source}")
         click.echo(f"LLM tokens used  : {s.tokens}")
     for err in report.errors:
-        click.echo(f"[warn] {err}", err=True)
+        click.echo(f"[error] {err}", err=True)
+    if report.errors:
+        click.echo(
+            f"\nScan incomplete: {len(report.errors)} column(s) could not be "
+            "analyzed (see errors above).",
+            err=True,
+        )
+        sys.exit(3)
 
 
 @cli.command()
 @click.option("--config", "config_path", required=True, help="Path to config YAML.")
 @click.option("--apply", "apply", is_flag=True,
               help="Write masked values back. Without this flag it's a dry-run preview.")
-def mask(config_path: str, apply: bool) -> None:
+@click.option("--allow-partial", "allow_partial", is_flag=True,
+              help="Proceed even if some columns could not be analyzed "
+                   "(they will NOT be masked). Off by default: an incomplete "
+                   "scan aborts masking.")
+def mask(config_path: str, apply: bool, allow_partial: bool) -> None:
     """Mask sensitive columns. Dry-run preview unless --apply is given."""
     config = _load(config_path)
     # The CLI flag is the single source of truth for write access. Without
@@ -77,7 +88,19 @@ def mask(config_path: str, apply: bool) -> None:
     config.masking.dry_run = not apply
 
     with Runner(config) as runner:
-        results = runner.mask()
+        report = runner.scan()
+        for err in report.errors:
+            click.echo(f"[error] scan: {err}", err=True)
+        if report.errors and not allow_partial:
+            click.echo(
+                f"\nAborting: {len(report.errors)} column(s) could not be "
+                "analyzed, and unanalyzed columns would be silently left "
+                "unmasked. Fix the errors above, or re-run with "
+                "--allow-partial to mask only what was scanned successfully.",
+                err=True,
+            )
+            sys.exit(2)
+        results = runner.mask(report.decisions)
 
     mode = "APPLIED" if apply else "DRY-RUN (no changes written)"
     click.echo(f"=== Masking {mode} ===")
