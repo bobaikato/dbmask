@@ -70,6 +70,14 @@ class LLMConfig:
     max_tokens_budget: int = 1_000_000  # hard stop to control cost
     sample_size: int = 50             # distinct values sent per column
     timeout: int = 60
+    # Local provider only: which HTTP API the local server speaks.
+    #   "ollama" (default) -> POST /api/generate
+    #   "openai"           -> POST /v1/chat/completions (LM Studio, vLLM, ...)
+    api_style: Optional[str] = None
+    # When False, no data values are sent to the provider — the model judges
+    # from the column name alone (metadata-only mode). Weaker detection, but
+    # nothing sensitive ever leaves the database host.
+    send_values: bool = True
 
 
 @dataclass

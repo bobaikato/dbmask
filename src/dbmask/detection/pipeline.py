@@ -138,7 +138,11 @@ class DetectionPipeline:
             raise TokenBudgetExceeded(
                 f"Token budget {self.config.llm.max_tokens_budget} reached."
             )
-        trimmed = sample[: self.config.llm.sample_size]
+        # Metadata-only mode: send the column name but no data values.
+        if self.config.llm.send_values:
+            trimmed = sample[: self.config.llm.sample_size]
+        else:
+            trimmed = []
         result = self.llm.classify(column, trimmed)  # type: ignore[union-attr]
         sensitivity = Sensitivity.SENSITIVE if result.sensitive else Sensitivity.NOT_SENSITIVE
         return Decision(

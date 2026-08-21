@@ -55,7 +55,13 @@ class LLMProvider(ABC):
 
     @staticmethod
     def build_prompt(column_name: str, sample: Sequence[str]) -> str:
-        body = "\n".join(f"- {v}" for v in sample)
+        if sample:
+            body = "\n".join(f"- {v}" for v in sample)
+        else:
+            # Metadata-only mode (llm.send_values: false): no data values are
+            # disclosed to the provider — only the column name.
+            body = ("(no values provided — the operator disabled sending "
+                    "sample values; judge from the column name alone)")
         return USER_PROMPT_TEMPLATE.format(column_name=column_name, sample=body)
 
     @staticmethod

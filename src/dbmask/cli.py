@@ -42,12 +42,35 @@ def _shape_only(value) -> object:
     return "".join("*" if ch.isalnum() else ch for ch in str(value))
 
 
+def _warn_llm_data_egress(config: Config) -> None:
+    """Make it explicit when column samples will leave the machine."""
+    llm = config.llm
+    if not llm.enabled or (llm.provider or "").lower() != "openai":
+        return
+    dest = llm.base_url or "https://api.openai.com"
+    if llm.send_values:
+        click.echo(
+            f"[warn] LLM fallback is enabled: up to {llm.sample_size} sampled "
+            f"values per undecided column will be sent to {dest}. Set "
+            "llm.send_values: false to send column names only, or use "
+            "provider: local for a fully on-prem model.",
+            err=True,
+        )
+    else:
+        click.echo(
+            f"[warn] LLM fallback is enabled (metadata-only): column names — "
+            f"but no data values — will be sent to {dest}.",
+            err=True,
+        )
+
+
 @cli.command()
 @click.option("--config", "config_path", required=True, help="Path to config YAML.")
 @click.option("--json", "as_json", is_flag=True, help="Emit decisions as JSON.")
 def scan(config_path: str, as_json: bool) -> None:
     """Classify every column as sensitive or not (no data is modified)."""
     config = _load(config_path)
+    _warn_llm_data_egress(config)
     with Runner(config) as runner:
         report = runner.scan()
 
@@ -103,6 +126,7 @@ def scan(config_path: str, as_json: bool) -> None:
 def mask(config_path: str, apply: bool, allow_partial: bool, show_values: bool) -> None:
     """Mask sensitive columns. Dry-run preview unless --apply is given."""
     config = _load(config_path)
+    _warn_llm_data_egress(config)
     if config.masking.seed == "dbmask":
         click.echo(
             "[warn] masking.seed is the publicly-known default ('dbmask'). "

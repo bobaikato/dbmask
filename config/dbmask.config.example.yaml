@@ -53,12 +53,23 @@ llm:
   max_tokens_budget: 1000000 # hard stop to control cost
   sample_size: 50            # distinct values sent to the model per column
   timeout: 60
+  # PRIVACY: with an external provider, sampled values leave your machine.
+  # Set send_values: false to send column NAMES only (metadata-only mode) —
+  # weaker detection, zero data egress. Or run a local model (below).
+  send_values: true
 
   # Example local setup (Ollama):
   # enabled: true
   # provider: local
   # model: llama3
   # base_url: http://localhost:11434
+
+  # Example local setup (LM Studio / vLLM — OpenAI-compatible server):
+  # enabled: true
+  # provider: local
+  # model: qwen2.5-7b-instruct
+  # base_url: http://localhost:1234
+  # api_style: openai        # local provider only: ollama (default) | openai
 
 # --- 5. Masking / ETL --------------------------------------------------------
 masking:
