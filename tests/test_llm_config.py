@@ -12,7 +12,7 @@ Two bugs and one missing control:
 """
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import pytest
 
@@ -21,7 +21,6 @@ from dbmask.config import Config, LLMConfig
 from dbmask.detection.pipeline import DetectionPipeline
 from dbmask.llm.base import LLMProvider, LLMResult
 from dbmask.llm.factory import create_provider
-
 
 # -- api_style plumbing --------------------------------------------------------
 

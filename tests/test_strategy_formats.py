@@ -18,9 +18,9 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
+from dbmask.config import MaskingConfig, SeedMapConfig
 from dbmask.detection.patterns import _luhn_valid
 from dbmask.masking.engine import ColumnPlan, MaskingEngine
-from dbmask.config import MaskingConfig, SeedMapConfig
 from dbmask.masking.format import coerce_stored, luhn_check_digit
 from dbmask.masking.rules import MaskContext, get_strategy
 

@@ -155,13 +155,12 @@ class DetectionPipeline:
 
     def _finalize(self, decision: Decision) -> Decision:
         self.stats.record(decision)
-        persistable = (
+        if (
             self.history is not None
             and decision.source not in ("history",)
             # UNKNOWN must not be remembered: persisting it would freeze
             # "could not tell" into a permanent decision.
             and decision.sensitivity is not Sensitivity.UNKNOWN
-        )
-        if persistable:
+        ):
             self.history.save(decision)
         return decision

@@ -148,7 +148,7 @@ class HistoryStore:
             for r in rows
         ]
 
-    def __enter__(self) -> "HistoryStore":
+    def __enter__(self) -> HistoryStore:
         self.connect()
         return self
 

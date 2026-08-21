@@ -20,7 +20,7 @@ def seeded_rng(value: str, seed: Optional[str]) -> random.Random:
     The same (value, seed) pair always yields the same RNG, so the same input is
     always masked to the same output — across columns, tables and runs.
     """
-    digest = hashlib.sha256(f"{seed or ''}:{value}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"{seed or ''}:{value}".encode()).hexdigest()
     return random.Random(int(digest[:16], 16))
 
 

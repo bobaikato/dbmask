@@ -9,8 +9,9 @@ Non-sensitive columns are passed through untouched.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable, Optional
+from typing import Optional
 
 from dbmask.config import MaskingConfig
 from dbmask.connectors.base import Connector
@@ -159,12 +160,11 @@ class MaskingEngine:
         ctx = MaskContext(column=plan.column, rule=plan.rule, seed=self.config.seed)
 
         store = self.seed_store()
-        trackable = (
-            store is not None
-            and value is not None
-            and plan.strategy_name.lower() not in self._untracked
-        )
-        if not trackable:
+        if (
+            store is None
+            or value is None
+            or plan.strategy_name.lower() in self._untracked
+        ):
             return strategy(value, ctx)
 
         # Pairs are scoped per strategy, so the same value masks identically in

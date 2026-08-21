@@ -77,7 +77,7 @@ class Runner:
             self.history.close()
         self.masker.close()
 
-    def __enter__(self) -> "Runner":
+    def __enter__(self) -> Runner:
         self.open()
         return self
 

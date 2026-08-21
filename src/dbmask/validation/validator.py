@@ -6,7 +6,8 @@ sides expose, so it is safe even if the two databases differ slightly.
 """
 from __future__ import annotations
 
-from typing import Iterable, Optional
+from collections.abc import Iterable
+from typing import Optional
 
 from dbmask.config import ValidationConfig
 from dbmask.connectors.base import Connector

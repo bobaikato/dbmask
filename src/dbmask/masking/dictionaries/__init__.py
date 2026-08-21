@@ -8,9 +8,9 @@ example — replace a US city with another US city — is handled by the
 """
 from __future__ import annotations
 
-from functools import lru_cache
+from collections.abc import Sequence
+from functools import cache
 from importlib import resources
-from typing import Sequence
 
 # Anchor resource lookups on THIS package (it has an __init__.py, so it is a
 # regular package on every supported Python) and walk into data/ from there.
@@ -22,7 +22,7 @@ _ANCHOR = __name__
 _CUSTOM: dict[str, list[str]] = {}
 
 
-@lru_cache(maxsize=None)
+@cache
 def _load_bundled(name: str) -> tuple[str, ...]:
     try:
         text = (

@@ -41,7 +41,7 @@ class FieldOverrides:
 
     # -- loading --------------------------------------------------------------
     @classmethod
-    def load(cls, path: Optional[str | Path]) -> "FieldOverrides":
+    def load(cls, path: Optional[str | Path]) -> FieldOverrides:
         obj = cls()
         if not path:
             return obj

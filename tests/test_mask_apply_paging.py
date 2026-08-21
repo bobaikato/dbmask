@@ -24,7 +24,6 @@ from dbmask.connectors.sql import SQLConnector
 from dbmask.detection.result import Decision, Sensitivity
 from dbmask.masking.engine import MaskingEngine
 
-
 ROWS = 650          # spans several pages ...
 BATCH_SIZE = 200    # ... at this batch size (4 pages: 200/200/200/50)
 

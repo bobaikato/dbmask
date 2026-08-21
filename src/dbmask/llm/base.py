@@ -6,8 +6,9 @@ OpenAI-compatible gateway, or a local server such as Ollama / LM Studio.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Optional
 
 SYSTEM_PROMPT = (
     "You are a data privacy analyst. You identify whether a sample of column "

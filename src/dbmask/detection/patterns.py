@@ -12,8 +12,9 @@ patterns to :class:`PatternMatcher`.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Callable, Optional, Sequence
+from typing import Callable, Optional
 
 
 @dataclass

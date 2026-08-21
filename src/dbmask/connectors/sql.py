@@ -7,17 +7,18 @@ per-database SQL required.
 """
 from __future__ import annotations
 
-from typing import Iterable, Optional
+from collections.abc import Iterable
+from typing import Optional
 
 from sqlalchemy import (
     MetaData,
     Table,
+    and_,
     create_engine,
     func,
     inspect,
-    select,
-    and_,
     or_,
+    select,
 )
 from sqlalchemy.engine import Engine
 
@@ -286,20 +287,20 @@ class SQLConnector(Connector):
             or []
         )
         indexes = sorted(
-            (
+
                 (idx.get("name"), tuple(idx.get("column_names") or []), bool(idx.get("unique")))
                 for idx in inspector.get_indexes(table, schema=schema)
-            )
+
         )
         foreign_keys = sorted(
-            (
+
                 (
                     tuple(fk.get("constrained_columns") or []),
                     fk.get("referred_table"),
                     tuple(fk.get("referred_columns") or []),
                 )
                 for fk in inspector.get_foreign_keys(table, schema=schema)
-            )
+
         )
         try:
             unique = sorted(

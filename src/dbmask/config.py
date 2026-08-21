@@ -220,7 +220,7 @@ class Config:
     validation: ValidationConfig = field(default_factory=ValidationConfig)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Config":
+    def from_dict(cls, data: dict[str, Any]) -> Config:
         data = _expand_env(data or {})
         return cls(
             database=DatabaseConfig(**(data.get("database") or {})),
@@ -234,7 +234,7 @@ class Config:
 
 
     @classmethod
-    def load(cls, path: str | Path) -> "Config":
+    def load(cls, path: str | Path) -> Config:
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"Config file not found: {path}")
