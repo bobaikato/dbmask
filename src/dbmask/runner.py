@@ -36,6 +36,13 @@ class ScanReport:
     def sensitive(self) -> list[Decision]:
         return [d for d in self.decisions if d.is_sensitive]
 
+    @property
+    def unknown(self) -> list[Decision]:
+        """Columns the pipeline could not classify — they will NOT be masked."""
+        from dbmask.detection.result import Sensitivity
+
+        return [d for d in self.decisions if d.sensitivity is Sensitivity.UNKNOWN]
+
 
 class Runner:
     """Wires together connector, history, detection pipeline and masking."""

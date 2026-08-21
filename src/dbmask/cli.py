@@ -17,6 +17,7 @@ import click
 
 from dbmask import __version__
 from dbmask.config import Config
+from dbmask.detection.result import Sensitivity
 from dbmask.runner import Runner
 
 
@@ -47,7 +48,12 @@ def scan(config_path: str, as_json: bool) -> None:
         click.echo(json.dumps([d.to_dict() for d in report.decisions], indent=2))
     else:
         for d in report.decisions:
-            flag = "SENSITIVE" if d.is_sensitive else "ok"
+            if d.sensitivity is Sensitivity.UNKNOWN:
+                flag = "UNKNOWN ?"
+            elif d.is_sensitive:
+                flag = "SENSITIVE"
+            else:
+                flag = "ok"
             rule = f" -> {d.rule}" if d.rule else ""
             click.echo(f"[{flag:9}] {d.schema}.{d.table}.{d.column}{rule} "
                        f"({d.source}, conf={d.confidence:.2f})")
@@ -55,8 +61,15 @@ def scan(config_path: str, as_json: bool) -> None:
         click.echo("\n--- Summary ---")
         click.echo(f"Columns analyzed : {s.total}")
         click.echo(f"Sensitive found  : {s.sensitive}")
+        click.echo(f"Needs review     : {s.unknown} (unknown)")
         click.echo(f"By source        : {s.by_source}")
         click.echo(f"LLM tokens used  : {s.tokens}")
+        if s.unknown:
+            click.echo(
+                "\nUnknown columns are NOT masked. Mark them in the overrides "
+                "file (detection.overrides_file) or enable the LLM fallback "
+                "(llm.enabled) to classify them.",
+            )
     for err in report.errors:
         click.echo(f"[error] {err}", err=True)
     if report.errors:
@@ -112,6 +125,22 @@ def mask(config_path: str, apply: bool, allow_partial: bool) -> None:
         for sample in res.preview[:3]:
             click.echo(f"    before: {sample['before']}")
             click.echo(f"    after : {sample['after']}")
+
+    unknown = report.unknown
+    if unknown:
+        click.echo(
+            f"\n[warn] {len(unknown)} column(s) could not be classified and "
+            "were NOT masked:",
+            err=True,
+        )
+        for d in unknown:
+            click.echo(f"  ? {d.schema}.{d.table}.{d.column} — {d.detail}", err=True)
+        click.echo(
+            "  Mark them in the overrides file (detection.overrides_file) or "
+            "enable the LLM fallback to classify them.",
+            err=True,
+        )
+
     if not apply:
         click.echo("\nRe-run with --apply to write these changes back.")
 
