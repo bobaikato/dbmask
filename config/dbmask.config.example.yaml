@@ -148,12 +148,18 @@ validation:
   check_schema_elements: true     # #2 columns/PK/indexes/FKs/constraints must match
   check_masking_completeness: true # #3 row-based "is everything really masked?" check
 
-  # Masking-completeness tuning (the row-based check):
+  # Masking-completeness tuning.
+  # Preferred mode (tables WITH a primary key): source and target rows are
+  # aligned on the key and the sensitive column is compared value-by-value.
+  pk_row_limit: 5000              # rows compared per column (key order); report notes partial coverage
+  # Fallback heuristic (tables WITHOUT a usable primary key) — its clean
+  # result is a WARNING, not a PASS, because per-row masking can't be proven:
   distinct_value_limit: 5000      # distinct values pulled per column to find overlaps
   max_common_values: 100          # how many overlapping values to drill into
   max_rows_per_value: 50          # rows fetched per value on each side
   unmasked_evidence_threshold: 10 # stop a column early after this many bad rows
   ignore_test_data: true          # skip noise like 'test', 'n/a', single chars
+  # Tip: `dbmask validate --strict` also fails on warnings/skipped checks.
 
   # Which sensitive columns to run check #3 on. Leave empty to auto-discover
   # from the history store (preferred) or a fresh scan of the target.

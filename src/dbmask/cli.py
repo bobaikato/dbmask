@@ -267,7 +267,10 @@ def strategies() -> None:
 @cli.command()
 @click.option("--config", "config_path", required=True, help="Path to config YAML.")
 @click.option("--json", "as_json", is_flag=True, help="Emit the report as JSON.")
-def validate(config_path: str, as_json: bool) -> None:
+@click.option("--strict", "strict", is_flag=True,
+              help="Warnings and skipped checks also fail the run. Use in CI "
+                   "when 'could not verify' must not pass the gate.")
+def validate(config_path: str, as_json: bool, strict: bool) -> None:
     """Validate the masked database against the original (source) database.
 
     Runs three checks: row counts, schema elements, and masking completeness.
@@ -277,6 +280,9 @@ def validate(config_path: str, as_json: bool) -> None:
     with Runner(config) as runner:
         report = runner.validate()
 
+    passed = report.passed_strict if strict else report.passed
+    summary = report.summary()
+
     if as_json:
         click.echo(json.dumps([i.to_dict() for i in report.issues], indent=2))
     else:
@@ -285,11 +291,23 @@ def validate(config_path: str, as_json: bool) -> None:
             icon = icons.get(issue.status.value, "?")
             click.echo(f"[{icon}] {issue.check:22} {issue.location}: {issue.message}")
         click.echo("\n--- Validation summary ---")
-        for status, count in report.summary().items():
+        for status, count in summary.items():
             click.echo(f"  {status:8}: {count}")
-        click.echo("\nRESULT: " + ("PASSED ✓" if report.passed else "FAILED ✗"))
 
-    if not report.passed:
+        caveats = []
+        if summary.get("warning"):
+            caveats.append(f"{summary['warning']} warning(s)")
+        if summary.get("skipped"):
+            caveats.append(f"{summary['skipped']} skipped")
+        if passed and caveats and not strict:
+            click.echo(
+                f"\nRESULT: PASSED ✓ — with {', '.join(caveats)}: not everything "
+                "could be verified (use --strict to fail on this)"
+            )
+        else:
+            click.echo("\nRESULT: " + ("PASSED ✓" if passed else "FAILED ✗"))
+
+    if not passed:
         sys.exit(1)
 
 

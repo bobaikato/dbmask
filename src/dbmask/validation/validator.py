@@ -11,7 +11,11 @@ from typing import Iterable, Optional
 from dbmask.config import ValidationConfig
 from dbmask.connectors.base import Connector
 from dbmask.validation.masking_completeness import MaskingCompletenessValidator
-from dbmask.validation.result import Status, ValidationIssue, ValidationReport
+from dbmask.validation.result import (  # noqa: F401 (Status re-exported for callers)
+    Status,
+    ValidationIssue,
+    ValidationReport,
+)
 from dbmask.validation.row_count import RowCountValidator
 from dbmask.validation.schema_elements import SchemaElementValidator
 
@@ -47,6 +51,25 @@ class Validator:
         """
         report = ValidationReport()
         schema_list = list(schemas) if schemas is not None else target.list_schemas()
+
+        # -- table presence: a table on only one side is never silently skipped
+        for schema in schema_list:
+            src_tables = set(source.list_tables(schema))
+            tgt_tables = set(target.list_tables(schema))
+            for table in sorted(src_tables - tgt_tables):
+                report.add(ValidationIssue(
+                    check="table_presence", status=Status.WARNING,
+                    schema=schema, table=table,
+                    message="Table exists only in the SOURCE database — its data "
+                            "was not validated (and may not have been masked at all).",
+                ))
+            for table in sorted(tgt_tables - src_tables):
+                report.add(ValidationIssue(
+                    check="table_presence", status=Status.WARNING,
+                    schema=schema, table=table,
+                    message="Table exists only in the TARGET database — nothing "
+                            "to compare it against.",
+                ))
 
         # -- table-level checks: row counts + schema elements -----------------
         if self.config.check_row_counts or self.config.check_schema_elements:

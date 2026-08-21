@@ -183,6 +183,12 @@ class ValidationConfig:
     check_masking_completeness: bool = True
 
     # -- masking-completeness tuning -----------------------------------------
+    # Preferred check: align source and target rows on the primary key and
+    # compare the sensitive column value-by-value. This bounds how many rows
+    # (in key order) are compared per column; the report says when coverage
+    # was partial.
+    pk_row_limit: int = 5000
+    # Fallback heuristic (tables without a usable primary key):
     # Max distinct values pulled per column when looking for common values.
     distinct_value_limit: int = 5000
     # Max common values actually drilled into with a full-row comparison.

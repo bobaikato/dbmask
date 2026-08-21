@@ -1,28 +1,36 @@
-"""Masking-completeness validation (check #3) — the row-based approach.
+"""Masking-completeness validation (check #3).
 
-This is the clever check. A naive "are there common values?" test produces false
-positives: with dictionary-based masking, a real value can be replaced by another
-real value that also exists in the data. Example: the dictionary contains both
-``Tesla`` and ``Apple`` and so does the data; after masking, ``Tesla`` -> ``Apple``
-and ``Apple`` -> ``Tesla``. The *column* still contains "Tesla" and "Apple", so a
-column-level check would wrongly scream "unmasked!". But the data **is** masked.
+Two modes, picked automatically per table:
 
-The fix: operate at the **row** level.
+**Primary-key aligned (preferred).** When source and target share a usable
+primary key, rows are matched key-by-key and the sensitive column is compared
+value-by-value: any row whose masked value is *identical* to its source value
+is a genuine transformation failure. This catches the case the old heuristic
+could not — a row where *this* column survived unmasked while some *other*
+column changed. Coverage is bounded by ``pk_row_limit`` (in key order) and the
+report states explicitly when it was partial.
 
-  1. INTERSECT the sensitive column between source and target to get the set of
-     **common values** (done in Python so it works across different databases).
-  2. Drop obvious test-data values (single chars, ``test``, ``n/a`` ...).
-  3. For each remaining common value, fetch the **whole rows** that contain it
-     from both source and target.
-  4. If an **entire row** (all comparable columns) is identical on both sides,
-     that row truly bypassed masking — a genuine transformation failure.
-     If only the single value coincides but the rest of the row differs, the row
-     was masked correctly (the Tesla/Apple swap case) and is fine.
+**Overlap heuristic (fallback, keyless tables).** Without a key there is no
+way to say which target row corresponds to which source row, so the check
+falls back to the older approach: find values common to both sides, then look
+for entire rows that are identical across databases. A clean result here is
+reported as a WARNING, not a PASS — "no identical whole rows" is evidence,
+not proof, and the report must not claim more than it verified.
 
-Doing the comparison in Python keeps it database-agnostic: source and target can
-even be different engines (e.g. Oracle -> PostgreSQL).
+Why the heuristic exists at all: with dictionary masking a real value can be
+replaced by *another* real value that also occurs in the data (the dictionary
+contains both ``Tesla`` and ``Apple``; after masking ``Tesla -> Apple`` and
+``Apple -> Tesla``). Column-level "are there common values?" checks scream
+"unmasked!" at that, so the row-level comparison is needed to avoid false
+alarms. All comparisons run in Python, keeping the check database-agnostic —
+source and target can be different engines (e.g. Oracle -> PostgreSQL).
+
+Privacy note: FAIL reports include *redacted* sample values (shape only) plus
+the row keys, so logs stay useful without copying sensitive values into them.
 """
 from __future__ import annotations
+
+from typing import Optional
 
 from dbmask.config import ValidationConfig
 from dbmask.connectors.base import Connector
@@ -33,12 +41,143 @@ from dbmask.validation.testdata import is_test_data
 _NONCOMPARABLE_TYPES = ("LOB", "CLOB", "BLOB", "NCLOB", "LONG", "BYTEA", "IMAGE", "XML")
 
 
+def _redact(value) -> Optional[str]:
+    """Shape-only redaction so reports never carry sensitive values."""
+    if value is None:
+        return None
+    return "".join("*" if ch.isalnum() else ch for ch in str(value))
+
+
 class MaskingCompletenessValidator:
     check_name = "masking_completeness"
 
     def __init__(self, config: ValidationConfig):
         self.config = config
 
+    # -- entry point -----------------------------------------------------------
+    def validate_column(
+        self,
+        source: Connector,
+        target: Connector,
+        schema: str,
+        table: str,
+        column: str,
+    ) -> ValidationIssue:
+        try:
+            key = self._usable_key(source, target, schema, table)
+            if key:
+                return self._pk_aligned(source, target, schema, table, column, key)
+            return self._overlap_heuristic(source, target, schema, table, column)
+        except Exception as exc:  # noqa: BLE001
+            return ValidationIssue(
+                check=self.check_name,
+                status=Status.ERROR,
+                schema=schema, table=table, column=column,
+                message=f"Masking-completeness check failed: {exc}",
+            )
+
+    def _usable_key(
+        self, source: Connector, target: Connector, schema: str, table: str
+    ) -> Optional[list[str]]:
+        """A primary key usable for row alignment: present and identical on
+        both sides. (Key columns are never rewritten by the engine, so key
+        values are stable across masking.)"""
+        src_pk = source.primary_key_columns(schema, table)
+        tgt_pk = target.primary_key_columns(schema, table)
+        if src_pk and src_pk == tgt_pk:
+            return list(src_pk)
+        return None
+
+    # -- preferred: primary-key aligned comparison -----------------------------
+    def _collect(
+        self, conn: Connector, schema: str, table: str,
+        key: list[str], column: str, limit: int,
+    ) -> tuple[dict, bool]:
+        rows: dict[tuple, object] = {}
+        truncated = False
+        for page in conn.iter_pages(
+            schema, table, key_columns=key, columns=[column], batch_size=1000
+        ):
+            for r in page:
+                rows[tuple(r[k] for k in key)] = r[column]
+                if len(rows) >= limit:
+                    truncated = True
+                    break
+            if truncated:
+                break
+        return rows, truncated
+
+    def _pk_aligned(
+        self,
+        source: Connector,
+        target: Connector,
+        schema: str,
+        table: str,
+        column: str,
+        key: list[str],
+    ) -> ValidationIssue:
+        cfg = self.config
+        src_rows, src_trunc = self._collect(source, schema, table, key, column, cfg.pk_row_limit)
+        tgt_rows, tgt_trunc = self._collect(target, schema, table, key, column, cfg.pk_row_limit)
+        partial = src_trunc or tgt_trunc
+
+        compared = 0
+        unmasked = 0
+        samples: list[dict] = []
+        for row_key, src_val in src_rows.items():
+            if row_key not in tgt_rows:
+                continue
+            compared += 1
+            if src_val is None:
+                continue
+            if cfg.ignore_test_data and is_test_data(src_val):
+                continue
+            if src_val == tgt_rows[row_key]:
+                unmasked += 1
+                if len(samples) < 5:
+                    samples.append({"key": repr(row_key), "value": _redact(src_val)})
+                if unmasked >= cfg.unmasked_evidence_threshold:
+                    break
+
+        coverage = (
+            f"partial — first {cfg.pk_row_limit:,} row(s) in key order"
+            if partial else "all rows"
+        )
+        detail = {
+            "mode": "pk_aligned",
+            "key": key,
+            "rows_compared": compared,
+            "coverage": coverage,
+        }
+
+        if unmasked > 0:
+            detail["unmasked_rows"] = unmasked
+            detail["samples_redacted"] = samples
+            return ValidationIssue(
+                check=self.check_name,
+                status=Status.FAIL,
+                schema=schema, table=table, column=column,
+                message=(
+                    f"{unmasked} row(s) hold a value identical to the source "
+                    f"(compared {compared} row(s) aligned on {'+'.join(key)}) — "
+                    "these values bypassed masking."
+                ),
+                detail=detail,
+            )
+
+        suffix = f" [{coverage}]" if partial else ""
+        return ValidationIssue(
+            check=self.check_name,
+            status=Status.PASS,
+            schema=schema, table=table, column=column,
+            message=(
+                f"PK-aligned comparison of {compared} row(s): every sensitive "
+                f"value differs from its source.{suffix}"
+            ),
+            detail=detail,
+        )
+
+    # -- fallback: overlap heuristic (no usable primary key) -------------------
     def _comparable_columns(self, source: Connector, target: Connector, schema: str, table: str) -> list[str]:
         """Columns present in BOTH source and target, excluding LOB-like types."""
         try:
@@ -59,7 +198,7 @@ class MaskingCompletenessValidator:
             common.append(name)
         return common
 
-    def validate_column(
+    def _overlap_heuristic(
         self,
         source: Connector,
         target: Connector,
@@ -68,95 +207,102 @@ class MaskingCompletenessValidator:
         column: str,
     ) -> ValidationIssue:
         cfg = self.config
-        try:
-            # 1) Common values (INTERSECT done in Python).
-            src_vals = set(source.distinct_values(schema, table, column, cfg.distinct_value_limit))
-            tgt_vals = set(target.distinct_values(schema, table, column, cfg.distinct_value_limit))
-            common = {v for v in (src_vals & tgt_vals) if v is not None}
 
-            # 2) Drop test-data noise.
-            if cfg.ignore_test_data:
-                common = {v for v in common if not is_test_data(v)}
+        # 1) Common values (INTERSECT done in Python).
+        src_vals = set(source.distinct_values(schema, table, column, cfg.distinct_value_limit))
+        tgt_vals = set(target.distinct_values(schema, table, column, cfg.distinct_value_limit))
+        common = {v for v in (src_vals & tgt_vals) if v is not None}
 
-            if not common:
-                return ValidationIssue(
-                    check=self.check_name,
-                    status=Status.PASS,
-                    schema=schema, table=table, column=column,
-                    message="No common values between source and target — fully masked.",
-                )
+        # 2) Drop test-data noise.
+        if cfg.ignore_test_data:
+            common = {v for v in common if not is_test_data(v)}
 
-            comparable = self._comparable_columns(source, target, schema, table)
-            if len(comparable) < 2:
-                return ValidationIssue(
-                    check=self.check_name,
-                    status=Status.WARNING,
-                    schema=schema, table=table, column=column,
-                    message=(
-                        f"{len(common)} common values, but table has <2 comparable "
-                        "columns; cannot run a reliable row-level check."
-                    ),
-                    detail={"common_values": len(common)},
-                )
-
-            # 3) + 4) Row-level comparison for each common value.
-            unmasked_rows = 0
-            samples: list = []
-            checked = 0
-            for value in list(common)[: cfg.max_common_values]:
-                checked += 1
-                src_rows = {
-                    tuple(r) for r in source.fetch_rows_where(
-                        schema, table, comparable, column, value, cfg.max_rows_per_value
-                    )
-                }
-                if not src_rows:
-                    continue
-                tgt_rows = {
-                    tuple(r) for r in target.fetch_rows_where(
-                        schema, table, comparable, column, value, cfg.max_rows_per_value
-                    )
-                }
-                identical = src_rows & tgt_rows
-                if identical:
-                    unmasked_rows += len(identical)
-                    if len(samples) < 5:
-                        samples.append(value)
-                    if unmasked_rows >= cfg.unmasked_evidence_threshold:
-                        break
-
-            if unmasked_rows > 0:
-                return ValidationIssue(
-                    check=self.check_name,
-                    status=Status.FAIL,
-                    schema=schema, table=table, column=column,
-                    message=(
-                        f"Found {unmasked_rows}+ identical row(s) across source and "
-                        "target — these rows bypassed masking (transformation failure)."
-                    ),
-                    detail={
-                        "unmasked_rows": unmasked_rows,
-                        "sample_values": [str(s)[:50] for s in samples],
-                        "common_values_checked": checked,
-                        "comparable_columns": len(comparable),
-                    },
-                )
-
+        if not common:
             return ValidationIssue(
                 check=self.check_name,
                 status=Status.PASS,
                 schema=schema, table=table, column=column,
                 message=(
-                    f"{len(common)} common value(s) exist, but no identical rows — "
-                    "values coincide yet rows are masked (expected, e.g. dictionary swaps)."
+                    "heuristic (no usable primary key): no value occurs in "
+                    "both source and target — nothing survived masking."
                 ),
-                detail={"common_values": len(common), "common_values_checked": checked},
+                detail={"mode": "overlap_heuristic"},
             )
 
-        except Exception as exc:  # noqa: BLE001
+        comparable = self._comparable_columns(source, target, schema, table)
+        if len(comparable) < 2:
             return ValidationIssue(
                 check=self.check_name,
-                status=Status.ERROR,
+                status=Status.WARNING,
                 schema=schema, table=table, column=column,
-                message=f"Masking-completeness check failed: {exc}",
+                message=(
+                    f"heuristic (no usable primary key): {len(common)} common "
+                    "value(s), but the table has <2 comparable columns — "
+                    "cannot run a reliable row-level check."
+                ),
+                detail={"mode": "overlap_heuristic", "common_values": len(common)},
             )
+
+        # 3) + 4) Row-level comparison for each common value.
+        unmasked_rows = 0
+        samples: list = []
+        checked = 0
+        for value in list(common)[: cfg.max_common_values]:
+            checked += 1
+            src_rows = {
+                tuple(r) for r in source.fetch_rows_where(
+                    schema, table, comparable, column, value, cfg.max_rows_per_value
+                )
+            }
+            if not src_rows:
+                continue
+            tgt_rows = {
+                tuple(r) for r in target.fetch_rows_where(
+                    schema, table, comparable, column, value, cfg.max_rows_per_value
+                )
+            }
+            identical = src_rows & tgt_rows
+            if identical:
+                unmasked_rows += len(identical)
+                if len(samples) < 5:
+                    samples.append(_redact(value))
+                if unmasked_rows >= cfg.unmasked_evidence_threshold:
+                    break
+
+        if unmasked_rows > 0:
+            return ValidationIssue(
+                check=self.check_name,
+                status=Status.FAIL,
+                schema=schema, table=table, column=column,
+                message=(
+                    f"{unmasked_rows}+ identical row(s) across source and "
+                    "target — these rows bypassed masking (transformation failure)."
+                ),
+                detail={
+                    "mode": "overlap_heuristic",
+                    "unmasked_rows": unmasked_rows,
+                    "samples_redacted": samples,
+                    "common_values_checked": checked,
+                    "comparable_columns": len(comparable),
+                },
+            )
+
+        # Values coincide but no whole row is identical. With no key to align
+        # on, that is *consistent with* correct masking (dictionary swaps) but
+        # not proof of it — say so instead of over-claiming.
+        return ValidationIssue(
+            check=self.check_name,
+            status=Status.WARNING,
+            schema=schema, table=table, column=column,
+            message=(
+                f"heuristic (no usable primary key): {len(common)} value(s) "
+                "appear on both sides but no identical whole row was found — "
+                "consistent with dictionary swaps, yet per-row masking cannot "
+                "be verified without a primary key."
+            ),
+            detail={
+                "mode": "overlap_heuristic",
+                "common_values": len(common),
+                "common_values_checked": checked,
+            },
+        )
