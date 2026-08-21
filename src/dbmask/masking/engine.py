@@ -15,6 +15,7 @@ from typing import Iterable, Optional
 from dbmask.config import MaskingConfig
 from dbmask.connectors.base import Connector
 from dbmask.detection.result import Decision
+from dbmask.masking.format import coerce_stored
 from dbmask.masking.rules import (
     DEFAULT_RULE_STRATEGIES,
     STRATEGIES,
@@ -173,7 +174,10 @@ class MaskingEngine:
 
         recorded = store.lookup(scope, original)
         if recorded is not None:
-            return recorded
+            # The store keeps text; give the replacement back the original's
+            # Python type (int/float/Decimal/date/datetime/UUID) so typed
+            # columns on strict engines accept the write.
+            return coerce_stored(value, recorded)
 
         masked = strategy(value, ctx)
         if masked is None or masked == "":
