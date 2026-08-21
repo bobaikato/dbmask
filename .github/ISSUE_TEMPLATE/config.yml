@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability (private)
+    url: https://github.com/sealandseacat/dbmask/security/advisories/new
+    about: Please report anything security-sensitive privately — see SECURITY.md.
+  - name: Question / discussion
+    url: https://github.com/sealandseacat/dbmask/discussions
+    about: Usage questions and open-ended design discussions are welcome here.

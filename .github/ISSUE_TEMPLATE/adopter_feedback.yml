@@ -1,0 +1,57 @@
+name: Adopter feedback
+description: "You tried dbmask on real data — tell us how it went (adopted OR rejected: both help)"
+title: "[adopter] "
+labels: ["adopter-feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This template is for anyone who has run dbmask against a real (or
+        realistically-sized) database — whether you adopted it, hit a wall, or
+        decided against it. Honest "we didn't pick it because X" reports shape
+        the roadmap as much as success stories. If you'd like to be listed in
+        [ADOPTERS.md](../blob/main/ADOPTERS.md), say so below (anonymous
+        entries are fine).
+  - type: input
+    id: context
+    attributes:
+      label: Context
+      placeholder: "fintech startup, ~40 tables, PostgreSQL 15, nightly staging refresh"
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Outcome so far
+      options:
+        - "Using it (production/regular pipeline)"
+        - "Using it (occasionally / manually)"
+        - "Evaluated, planning to adopt"
+        - "Evaluated, decided against (tell us why below!)"
+        - "Still evaluating"
+    validations:
+      required: true
+  - type: textarea
+    id: worked
+    attributes:
+      label: What worked well?
+  - type: textarea
+    id: friction
+    attributes:
+      label: Where was the friction?
+      description: Rough edges, surprises, missing features, docs gaps, performance walls.
+    validations:
+      required: true
+  - type: textarea
+    id: numbers
+    attributes:
+      label: Any numbers you can share
+      description: "Rows/tables masked, runtime, detection precision (false positives/negatives) — approximate is fine."
+  - type: dropdown
+    id: adopters-listing
+    attributes:
+      label: List you in ADOPTERS.md?
+      options:
+        - "Yes — with our name (I'll confirm details in a comment)"
+        - "Yes — anonymously (industry + use case only)"
+        - "No"

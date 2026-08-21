@@ -1,0 +1,35 @@
+name: Feature request
+description: Propose an improvement or new capability
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: |
+        The real-world situation first, the proposed feature second — often
+        there's a smaller change that solves the same problem.
+      placeholder: "When masking our staging refresh, we need to ..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      placeholder: "A `dbmask ...` command / a config option that ..."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      placeholder: "We currently work around it by ..."
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Would you be up for contributing this?
+      options:
+        - "Yes, with guidance"
+        - "Maybe"
+        - "No, just proposing"
