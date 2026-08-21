@@ -35,6 +35,13 @@ def _load(config_path: str) -> Config:
         sys.exit(2)
 
 
+def _shape_only(value) -> object:
+    """Redact a value while keeping its shape (``Ada-99`` -> ``***-**``)."""
+    if value is None:
+        return None
+    return "".join("*" if ch.isalnum() else ch for ch in str(value))
+
+
 @cli.command()
 @click.option("--config", "config_path", required=True, help="Path to config YAML.")
 @click.option("--json", "as_json", is_flag=True, help="Emit decisions as JSON.")
@@ -89,9 +96,20 @@ def scan(config_path: str, as_json: bool) -> None:
               help="Proceed even if some columns could not be analyzed "
                    "(they will NOT be masked). Off by default: an incomplete "
                    "scan aborts masking.")
-def mask(config_path: str, apply: bool, allow_partial: bool) -> None:
+@click.option("--show-values", "show_values", is_flag=True,
+              help="Show real original values in the preview. By default "
+                   "originals are redacted so sensitive data does not end up "
+                   "in terminals, scrollback, or CI logs.")
+def mask(config_path: str, apply: bool, allow_partial: bool, show_values: bool) -> None:
     """Mask sensitive columns. Dry-run preview unless --apply is given."""
     config = _load(config_path)
+    if config.masking.seed == "dbmask":
+        click.echo(
+            "[warn] masking.seed is the publicly-known default ('dbmask'). "
+            "For guessable values, anyone can recompute the mapping. Set a "
+            "private seed, e.g.  masking.seed: ${DBMASK_SEED}",
+            err=True,
+        )
     # The CLI flag is the single source of truth for write access. Without
     # --apply this is ALWAYS a dry run — even if the YAML says
     # `masking.dry_run: false`. (Config-level dry_run still exists for library
@@ -117,14 +135,29 @@ def mask(config_path: str, apply: bool, allow_partial: bool) -> None:
 
     mode = "APPLIED" if apply else "DRY-RUN (no changes written)"
     click.echo(f"=== Masking {mode} ===")
+    previewed = False
     for res in results:
         click.echo(f"\n{res.schema}.{res.table}  "
                    f"(scanned={res.rows_scanned}, written={res.rows_written})")
         for plan in res.columns:
             click.echo(f"  - {plan.column}: rule={plan.rule} -> strategy={plan.strategy_name}")
+        for plan in res.skipped_columns:
+            click.echo(
+                f"  ! {plan.column}: NOT MASKED — primary-key column. "
+                "Rewriting key values is not supported (it would break row "
+                "addressing and foreign keys); this column still holds its "
+                "original data.",
+                err=True,
+            )
         for sample in res.preview[:3]:
-            click.echo(f"    before: {sample['before']}")
+            previewed = True
+            before = sample["before"]
+            if not show_values:
+                before = {k: _shape_only(v) for k, v in before.items()}
+            click.echo(f"    before: {before}")
             click.echo(f"    after : {sample['after']}")
+    if previewed and not show_values:
+        click.echo("\n(original values are redacted; pass --show-values to display them)")
 
     unknown = report.unknown
     if unknown:
