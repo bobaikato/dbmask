@@ -12,7 +12,9 @@ Two bugs and one missing control:
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
+from urllib.parse import urlparse
 
 import pytest
 
@@ -128,7 +130,13 @@ def test_cli_warns_before_sending_values_to_openai(cli_env):
     # actually be constructed in this environment (the openai package may be
     # missing) — it fires before any network client is built.
     assert "will be sent to" in result.output
-    assert "api.openai.com" in result.output
+    # Compare the parsed host, not a substring of the URL: a bare
+    # `"host" in text` check is the shape of an incomplete URL sanitization
+    # (CodeQL py/incomplete-url-substring-sanitization), and it would also
+    # pass for a look-alike destination like "api.openai.com.evil.test".
+    destination = re.search(r"will be sent to (\S+)", result.output)
+    assert destination is not None, result.output
+    assert urlparse(destination.group(1).rstrip(".")).netloc == "api.openai.com"
 
 
 def test_cli_metadata_only_warning_mentions_no_values(cli_env):
