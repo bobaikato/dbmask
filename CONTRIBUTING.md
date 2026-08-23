@@ -20,6 +20,15 @@ Run the test suite:
 pytest
 ```
 
+Lint, type-check, and coverage — CI enforces all three, so save yourself a
+round trip:
+
+```bash
+ruff check src/ tests/ examples/   # style + common bugs (config in pyproject.toml)
+mypy                               # type check (src/dbmask)
+pytest --cov=dbmask --cov-fail-under=80
+```
+
 The suite needs no external services — everything runs against throwaway
 SQLite databases in a temp directory. `dbmask` supports Python 3.9+, and CI
 runs the suite on every supported version, so please keep new code 3.9-clean
@@ -73,7 +82,9 @@ reference implementation).
 - Every bug fix should come with a regression test that fails on the old code.
 - Keep commits focused; a short imperative subject line
   (`fix: ...`, `feat: ...`, `docs: ...`) matches the existing history.
-- CI (tests on 3.9–3.14 + packaging checks) must be green.
+- CI must be green: tests on 3.9–3.14 (+ Windows), ruff, mypy, the 80%
+  coverage gate, and packaging checks.
+- User-facing changes get a line under `[Unreleased]` in CHANGELOG.md.
 - If you're planning something large, please open an issue first so we can
   agree on the direction before you invest the time.
 

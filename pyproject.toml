@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dbmask"
-version = "0.1.0"
+version = "0.1.1"
 description = "An open-source toolkit to discover and mask sensitive data in any database."
 readme = "README.md"
 license = "MIT"
@@ -63,7 +63,17 @@ all = [
     "openai>=1.0", "tiktoken>=0.5", "requests>=2.31",
 ]
 
-dev = ["pytest>=7.4", "pytest-cov>=4.1"]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.8",
+    # mypy 2.x dropped --python-version 3.9; stay on 1.x until our floor moves.
+    "mypy>=1.14,<2",
+    "types-PyYAML",
+    "types-requests",
+    # so the LocalProvider tests run instead of being importorskip'd away
+    "requests>=2.31",
+]
 
 [project.scripts]
 dbmask = "dbmask.cli:cli"
@@ -73,3 +83,41 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 dbmask = ["py.typed", "masking/dictionaries/data/*.txt"]
+
+# ---------------------------------------------------------------------------
+# Tooling
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E501",   # long lines: docs/tables read better unwrapped
+    "UP007",  # keep Optional[X] spelling while 3.9 is supported
+    "UP045",
+]
+
+[tool.mypy]
+python_version = "3.9"
+files = ["src/dbmask"]
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = false  # ignores differ between local/CI stub sets
+no_implicit_optional = true
+[[tool.mypy.overrides]]
+module = ["click.*"]
+follow_imports = "skip"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["dbmask"]
+
+[tool.coverage.report]
+show_missing = false
+precision = 0

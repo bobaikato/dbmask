@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 class Status(str, Enum):
@@ -64,8 +64,22 @@ class ValidationReport:
 
     @property
     def passed(self) -> bool:
-        """True when nothing failed or errored."""
+        """True when nothing failed or errored.
+
+        Warnings and skipped checks do NOT fail this — read :attr:`passed_strict`
+        (CLI: ``--strict``) when "not verified" must count as "not passed".
+        """
         return not any(i.status in (Status.FAIL, Status.ERROR) for i in self.issues)
+
+    @property
+    def passed_strict(self) -> bool:
+        """True only when every check ran and every check passed.
+
+        Warnings ("could not verify reliably") and skipped checks fail strict
+        mode: a gate that lets unverified data through is not a gate.
+        """
+        bad = (Status.FAIL, Status.ERROR, Status.WARNING, Status.SKIPPED)
+        return not any(i.status in bad for i in self.issues)
 
     def summary(self) -> dict[str, int]:
         counts: dict[str, int] = {}

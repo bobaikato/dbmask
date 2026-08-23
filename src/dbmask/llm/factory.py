@@ -26,10 +26,16 @@ def create_provider(cfg: LLMConfig) -> Optional[LLMProvider]:
     if provider in ("local", "ollama"):
         from dbmask.llm.local_provider import LocalProvider
 
+        api_style = (cfg.api_style or "ollama").lower()
+        if api_style not in ("ollama", "openai"):
+            raise ValueError(
+                f"Unknown llm.api_style: {cfg.api_style!r} (expected 'ollama' or 'openai')"
+            )
         return LocalProvider(
             model=cfg.model,
             base_url=cfg.base_url or "http://localhost:11434",
             temperature=cfg.temperature,
             timeout=cfg.timeout,
+            api_style=api_style,
         )
     raise ValueError(f"Unknown LLM provider: {cfg.provider!r}")

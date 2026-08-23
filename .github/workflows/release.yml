@@ -31,4 +31,7 @@ jobs:
       - name: Validate metadata
         run: twine check --strict dist/*
       - name: Publish to PyPI (trusted publishing)
-        uses: pypa/gh-action-pypi-publish@release/v1
+        # Pinned to a commit SHA, not a moving tag: this job holds
+        # id-token: write, so a hijacked tag could publish to PyPI as us.
+        # Dependabot (github-actions ecosystem) keeps the pin current.
+        uses: pypa/gh-action-pypi-publish@a892a5a61159132606e93a2fa6f4358831b04d26  # v1.14.2

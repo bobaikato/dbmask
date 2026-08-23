@@ -9,7 +9,7 @@ confidential databases.
 """
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from dbmask.llm.base import SYSTEM_PROMPT, LLMProvider, LLMResult
 

@@ -1,0 +1,60 @@
+name: Bug report
+description: Something didn't work the way it should
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time! A reproducible report usually gets fixed fast.
+        **Never paste real sensitive data** — replace values with fakes of the same shape.
+  - type: input
+    id: version
+    attributes:
+      label: dbmask version
+      description: "`dbmask --version` (or `pip show dbmask`)"
+      placeholder: "0.1.1"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Python & database
+      placeholder: "Python 3.12 on Ubuntu 24.04; PostgreSQL 16 via psycopg2"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you run, what did you expect, what happened instead?
+      placeholder: |
+        1. Config (redacted): ...
+        2. Ran: dbmask mask --config ... --apply
+        3. Expected: ...
+        4. Got: ...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: |
+        Ideally a small script or schema + config that shows the problem
+        against SQLite. The test suite has examples of this shape in `tests/`.
+      render: shell
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output / traceback
+      description: Full output with `--show-values` **left off**; redact anything sensitive.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I removed or faked all sensitive values in this report
+          required: true
+        - label: This is not a security vulnerability (those go to SECURITY.md, privately)
+          required: true

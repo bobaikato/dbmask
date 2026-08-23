@@ -34,6 +34,7 @@ class PipelineStats:
     total: int = 0
     by_source: dict[str, int] = None  # type: ignore[assignment]
     sensitive: int = 0
+    unknown: int = 0
     tokens: int = 0
 
     def __post_init__(self):
@@ -45,6 +46,8 @@ class PipelineStats:
         self.by_source[decision.source] = self.by_source.get(decision.source, 0) + 1
         if decision.is_sensitive:
             self.sensitive += 1
+        if decision.sensitivity is Sensitivity.UNKNOWN:
+            self.unknown += 1
         self.tokens += decision.token_usage
 
 
@@ -113,11 +116,21 @@ class DetectionPipeline:
         if self.llm is not None and sample:
             return self._finalize(self._classify_with_llm(db, schema, table, column, sample))
 
-        # Nothing conclusive -> treat as not sensitive (recorded for next time).
+        # Nothing conclusive. "We could not tell" is NOT the same as "not
+        # sensitive": the column is reported as UNKNOWN so a human can review
+        # it (overrides file) or the LLM fallback can be enabled. UNKNOWN is
+        # never persisted to history — every run re-evaluates it, so a column
+        # that was empty yesterday is not permanently stamped as safe.
+        if sample:
+            detail = ("No pattern matched and the LLM fallback is disabled — "
+                      "review manually (overrides file) or enable llm.enabled")
+            source = "inconclusive"
+        else:
+            detail = "Column has no data to sample — nothing to analyze"
+            source = "no_data"
         return self._finalize(
-            Decision(db, schema, table, column, Sensitivity.NOT_SENSITIVE,
-                     source="pattern" if sample else "no_data", confidence=0.5,
-                     detail="No pattern matched and LLM disabled/unavailable")
+            Decision(db, schema, table, column, Sensitivity.UNKNOWN,
+                     source=source, confidence=0.0, detail=detail)
         )
 
     def _classify_with_llm(self, db, schema, table, column, sample) -> Decision:
@@ -125,7 +138,11 @@ class DetectionPipeline:
             raise TokenBudgetExceeded(
                 f"Token budget {self.config.llm.max_tokens_budget} reached."
             )
-        trimmed = sample[: self.config.llm.sample_size]
+        # Metadata-only mode: send the column name but no data values.
+        if self.config.llm.send_values:
+            trimmed = sample[: self.config.llm.sample_size]
+        else:
+            trimmed = []
         result = self.llm.classify(column, trimmed)  # type: ignore[union-attr]
         sensitivity = Sensitivity.SENSITIVE if result.sensitive else Sensitivity.NOT_SENSITIVE
         return Decision(
@@ -138,6 +155,12 @@ class DetectionPipeline:
 
     def _finalize(self, decision: Decision) -> Decision:
         self.stats.record(decision)
-        if self.history is not None and decision.source not in ("history",):
+        if (
+            self.history is not None
+            and decision.source not in ("history",)
+            # UNKNOWN must not be remembered: persisting it would freeze
+            # "could not tell" into a permanent decision.
+            and decision.sensitivity is not Sensitivity.UNKNOWN
+        ):
             self.history.save(decision)
         return decision

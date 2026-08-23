@@ -17,6 +17,16 @@ from dbmask.validation.result import ValidationReport
 from dbmask.validation.validator import Validator
 
 
+class ScanIncompleteError(RuntimeError):
+    """Raised when masking would run on top of an incomplete scan.
+
+    If any column failed to be analyzed, that column has no decision — and a
+    column without a decision is silently left unmasked. For a tool whose job
+    is to remove sensitive data, that must be an explicit choice, never a
+    default, so masking fails closed unless the caller opts in.
+    """
+
+
 @dataclass
 class ScanReport:
     decisions: list[Decision] = field(default_factory=list)
@@ -25,6 +35,13 @@ class ScanReport:
     @property
     def sensitive(self) -> list[Decision]:
         return [d for d in self.decisions if d.is_sensitive]
+
+    @property
+    def unknown(self) -> list[Decision]:
+        """Columns the pipeline could not classify — they will NOT be masked."""
+        from dbmask.detection.result import Sensitivity
+
+        return [d for d in self.decisions if d.sensitivity is Sensitivity.UNKNOWN]
 
 
 class Runner:
@@ -60,7 +77,7 @@ class Runner:
             self.history.close()
         self.masker.close()
 
-    def __enter__(self) -> "Runner":
+    def __enter__(self) -> Runner:
         self.open()
         return self
 
@@ -88,10 +105,29 @@ class Runner:
                         report.errors.append(f"{schema}.{table}.{column}: {exc}")
         return report
 
-    def mask(self, decisions: Optional[list[Decision]] = None) -> list[TableMaskResult]:
-        """Mask all sensitive columns. Runs a scan first if not given decisions."""
+    def mask(
+        self,
+        decisions: Optional[list[Decision]] = None,
+        *,
+        allow_partial: bool = False,
+    ) -> list[TableMaskResult]:
+        """Mask all sensitive columns. Runs a scan first if not given decisions.
+
+        Fails closed: if the internal scan could not analyze every column,
+        a :class:`ScanIncompleteError` is raised instead of silently masking
+        only the columns that happened to scan cleanly. Pass
+        ``allow_partial=True`` (CLI: ``--allow-partial``) to accept a partial
+        scan explicitly.
+        """
         if decisions is None:
-            decisions = self.scan().decisions
+            report = self.scan()
+            if report.errors and not allow_partial:
+                raise ScanIncompleteError(
+                    f"{len(report.errors)} column(s) could not be analyzed; "
+                    "unanalyzed columns would be silently left unmasked. "
+                    "Errors:\n  - " + "\n  - ".join(report.errors)
+                )
+            decisions = report.decisions
 
         # Group sensitive decisions by (schema, table).
         grouped: dict[tuple[str, str], list[Decision]] = {}

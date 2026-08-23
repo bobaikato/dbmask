@@ -109,7 +109,10 @@ def test_masking_completeness_detects_unmasked_row(dbs):
     assert len(mc) == 1
     # Row 3 (Google) is identical on both sides -> must FAIL.
     assert mc[0].status == Status.FAIL
-    assert "Google" in mc[0].detail.get("sample_values", [])
+    assert mc[0].detail["unmasked_rows"] == 1
+    # Reports carry redacted samples only — never the sensitive value itself.
+    assert "Google" not in str(mc[0].detail)
+    assert any(s["value"] == "******" for s in mc[0].detail["samples_redacted"])
 
 
 def test_swap_is_not_flagged_as_unmasked(tmp_path: Path):

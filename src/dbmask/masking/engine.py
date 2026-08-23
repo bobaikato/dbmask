@@ -9,12 +9,14 @@ Non-sensitive columns are passed through untouched.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable, Optional
+from typing import Optional
 
 from dbmask.config import MaskingConfig
 from dbmask.connectors.base import Connector
 from dbmask.detection.result import Decision
+from dbmask.masking.format import coerce_stored
 from dbmask.masking.rules import (
     DEFAULT_RULE_STRATEGIES,
     STRATEGIES,
@@ -42,6 +44,10 @@ class TableMaskResult:
     rows_scanned: int = 0
     rows_written: int = 0
     columns: list[ColumnPlan] = field(default_factory=list)
+    #: Sensitive columns that could NOT be masked and were left untouched
+    #: (currently: primary-key columns — rewriting keys safely requires
+    #: cascading updates across referencing tables, which is not supported).
+    skipped_columns: list[ColumnPlan] = field(default_factory=list)
     preview: list[dict] = field(default_factory=list)
 
 
@@ -154,12 +160,11 @@ class MaskingEngine:
         ctx = MaskContext(column=plan.column, rule=plan.rule, seed=self.config.seed)
 
         store = self.seed_store()
-        trackable = (
-            store is not None
-            and value is not None
-            and plan.strategy_name.lower() not in self._untracked
-        )
-        if not trackable:
+        if (
+            store is None
+            or value is None
+            or plan.strategy_name.lower() in self._untracked
+        ):
             return strategy(value, ctx)
 
         # Pairs are scoped per strategy, so the same value masks identically in
@@ -169,12 +174,20 @@ class MaskingEngine:
 
         recorded = store.lookup(scope, original)
         if recorded is not None:
-            return recorded
+            # The store keeps text; give the replacement back the original's
+            # Python type (int/float/Decimal/date/datetime/UUID) so typed
+            # columns on strict engines accept the write.
+            return coerce_stored(value, recorded)
 
         masked = strategy(value, ctx)
         if masked is None or masked == "":
             return masked  # nothing meaningful to track
-        store.record(scope, original, str(masked), plan.strategy_name)
+        # A dry run must not have side effects: pairs are only recorded when
+        # values are actually written. Previews still *read* existing pairs
+        # (and strategies are deterministic), so the preview matches what a
+        # later --apply will write.
+        if not self.config.dry_run:
+            store.record(scope, original, str(masked), plan.strategy_name)
         return masked
 
     def mask_row(self, row: dict, plans: list[ColumnPlan]) -> dict:
@@ -196,11 +209,24 @@ class MaskingEngine:
         preview_limit: int = 10,
     ) -> TableMaskResult:
         plans = self.plan_table(decisions)
-        result = TableMaskResult(schema=schema, table=table, columns=plans)
-        if not plans:
-            return result  # nothing sensitive here
-
         keys = key_columns or connector.primary_key_columns(schema, table)
+
+        # A primary-key column cannot be rewritten in place: the connector
+        # (correctly) refuses to change the very values it uses to address
+        # rows, and rewriting keys would require cascading updates through
+        # every referencing table. Previously such columns were silently
+        # dropped from the UPDATE while the preview showed them as masked.
+        # Now they are excluded up front and reported, so "this key column
+        # still holds sensitive data" is impossible to miss.
+        key_set = {k.lower() for k in keys}
+        skipped = [p for p in plans if p.column.lower() in key_set]
+        plans = [p for p in plans if p.column.lower() not in key_set]
+
+        result = TableMaskResult(
+            schema=schema, table=table, columns=plans, skipped_columns=skipped
+        )
+        if not plans:
+            return result  # nothing maskable here
 
         def _process(row: dict) -> dict:
             result.rows_scanned += 1

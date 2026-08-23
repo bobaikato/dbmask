@@ -17,6 +17,7 @@ import click
 
 from dbmask import __version__
 from dbmask.config import Config
+from dbmask.detection.result import Sensitivity
 from dbmask.runner import Runner
 
 
@@ -34,12 +35,42 @@ def _load(config_path: str) -> Config:
         sys.exit(2)
 
 
+def _shape_only(value) -> object:
+    """Redact a value while keeping its shape (``Ada-99`` -> ``***-**``)."""
+    if value is None:
+        return None
+    return "".join("*" if ch.isalnum() else ch for ch in str(value))
+
+
+def _warn_llm_data_egress(config: Config) -> None:
+    """Make it explicit when column samples will leave the machine."""
+    llm = config.llm
+    if not llm.enabled or (llm.provider or "").lower() != "openai":
+        return
+    dest = llm.base_url or "https://api.openai.com"
+    if llm.send_values:
+        click.echo(
+            f"[warn] LLM fallback is enabled: up to {llm.sample_size} sampled "
+            f"values per undecided column will be sent to {dest}. Set "
+            "llm.send_values: false to send column names only, or use "
+            "provider: local for a fully on-prem model.",
+            err=True,
+        )
+    else:
+        click.echo(
+            f"[warn] LLM fallback is enabled (metadata-only): column names — "
+            f"but no data values — will be sent to {dest}.",
+            err=True,
+        )
+
+
 @cli.command()
 @click.option("--config", "config_path", required=True, help="Path to config YAML.")
 @click.option("--json", "as_json", is_flag=True, help="Emit decisions as JSON.")
 def scan(config_path: str, as_json: bool) -> None:
     """Classify every column as sensitive or not (no data is modified)."""
     config = _load(config_path)
+    _warn_llm_data_egress(config)
     with Runner(config) as runner:
         report = runner.scan()
 
@@ -47,7 +78,12 @@ def scan(config_path: str, as_json: bool) -> None:
         click.echo(json.dumps([d.to_dict() for d in report.decisions], indent=2))
     else:
         for d in report.decisions:
-            flag = "SENSITIVE" if d.is_sensitive else "ok"
+            if d.sensitivity is Sensitivity.UNKNOWN:
+                flag = "UNKNOWN ?"
+            elif d.is_sensitive:
+                flag = "SENSITIVE"
+            else:
+                flag = "ok"
             rule = f" -> {d.rule}" if d.rule else ""
             click.echo(f"[{flag:9}] {d.schema}.{d.table}.{d.column}{rule} "
                        f"({d.source}, conf={d.confidence:.2f})")
@@ -55,35 +91,113 @@ def scan(config_path: str, as_json: bool) -> None:
         click.echo("\n--- Summary ---")
         click.echo(f"Columns analyzed : {s.total}")
         click.echo(f"Sensitive found  : {s.sensitive}")
+        click.echo(f"Needs review     : {s.unknown} (unknown)")
         click.echo(f"By source        : {s.by_source}")
         click.echo(f"LLM tokens used  : {s.tokens}")
+        if s.unknown:
+            click.echo(
+                "\nUnknown columns are NOT masked. Mark them in the overrides "
+                "file (detection.overrides_file) or enable the LLM fallback "
+                "(llm.enabled) to classify them.",
+            )
     for err in report.errors:
-        click.echo(f"[warn] {err}", err=True)
+        click.echo(f"[error] {err}", err=True)
+    if report.errors:
+        click.echo(
+            f"\nScan incomplete: {len(report.errors)} column(s) could not be "
+            "analyzed (see errors above).",
+            err=True,
+        )
+        sys.exit(3)
 
 
 @cli.command()
 @click.option("--config", "config_path", required=True, help="Path to config YAML.")
 @click.option("--apply", "apply", is_flag=True,
               help="Write masked values back. Without this flag it's a dry-run preview.")
-def mask(config_path: str, apply: bool) -> None:
+@click.option("--allow-partial", "allow_partial", is_flag=True,
+              help="Proceed even if some columns could not be analyzed "
+                   "(they will NOT be masked). Off by default: an incomplete "
+                   "scan aborts masking.")
+@click.option("--show-values", "show_values", is_flag=True,
+              help="Show real original values in the preview. By default "
+                   "originals are redacted so sensitive data does not end up "
+                   "in terminals, scrollback, or CI logs.")
+def mask(config_path: str, apply: bool, allow_partial: bool, show_values: bool) -> None:
     """Mask sensitive columns. Dry-run preview unless --apply is given."""
     config = _load(config_path)
-    if apply:
-        config.masking.dry_run = False
+    _warn_llm_data_egress(config)
+    if config.masking.seed == "dbmask":
+        click.echo(
+            "[warn] masking.seed is the publicly-known default ('dbmask'). "
+            "For guessable values, anyone can recompute the mapping. Set a "
+            "private seed, e.g.  masking.seed: ${DBMASK_SEED}",
+            err=True,
+        )
+    # The CLI flag is the single source of truth for write access. Without
+    # --apply this is ALWAYS a dry run — even if the YAML says
+    # `masking.dry_run: false`. (Config-level dry_run still exists for library
+    # users driving MaskingEngine/Runner directly.) Previously the flag only
+    # switched dry-run OFF, so a config with `dry_run: false` wrote to the
+    # database while the CLI printed "DRY-RUN (no changes written)".
+    config.masking.dry_run = not apply
 
     with Runner(config) as runner:
-        results = runner.mask()
+        report = runner.scan()
+        for err in report.errors:
+            click.echo(f"[error] scan: {err}", err=True)
+        if report.errors and not allow_partial:
+            click.echo(
+                f"\nAborting: {len(report.errors)} column(s) could not be "
+                "analyzed, and unanalyzed columns would be silently left "
+                "unmasked. Fix the errors above, or re-run with "
+                "--allow-partial to mask only what was scanned successfully.",
+                err=True,
+            )
+            sys.exit(2)
+        results = runner.mask(report.decisions)
 
     mode = "APPLIED" if apply else "DRY-RUN (no changes written)"
     click.echo(f"=== Masking {mode} ===")
+    previewed = False
     for res in results:
         click.echo(f"\n{res.schema}.{res.table}  "
                    f"(scanned={res.rows_scanned}, written={res.rows_written})")
         for plan in res.columns:
             click.echo(f"  - {plan.column}: rule={plan.rule} -> strategy={plan.strategy_name}")
+        for plan in res.skipped_columns:
+            click.echo(
+                f"  ! {plan.column}: NOT MASKED — primary-key column. "
+                "Rewriting key values is not supported (it would break row "
+                "addressing and foreign keys); this column still holds its "
+                "original data.",
+                err=True,
+            )
         for sample in res.preview[:3]:
-            click.echo(f"    before: {sample['before']}")
+            previewed = True
+            before = sample["before"]
+            if not show_values:
+                before = {k: _shape_only(v) for k, v in before.items()}
+            click.echo(f"    before: {before}")
             click.echo(f"    after : {sample['after']}")
+    if previewed and not show_values:
+        click.echo("\n(original values are redacted; pass --show-values to display them)")
+
+    unknown = report.unknown
+    if unknown:
+        click.echo(
+            f"\n[warn] {len(unknown)} column(s) could not be classified and "
+            "were NOT masked:",
+            err=True,
+        )
+        for d in unknown:
+            click.echo(f"  ? {d.schema}.{d.table}.{d.column} — {d.detail}", err=True)
+        click.echo(
+            "  Mark them in the overrides file (detection.overrides_file) or "
+            "enable the LLM fallback to classify them.",
+            err=True,
+        )
+
     if not apply:
         click.echo("\nRe-run with --apply to write these changes back.")
 
@@ -153,7 +267,10 @@ def strategies() -> None:
 @cli.command()
 @click.option("--config", "config_path", required=True, help="Path to config YAML.")
 @click.option("--json", "as_json", is_flag=True, help="Emit the report as JSON.")
-def validate(config_path: str, as_json: bool) -> None:
+@click.option("--strict", "strict", is_flag=True,
+              help="Warnings and skipped checks also fail the run. Use in CI "
+                   "when 'could not verify' must not pass the gate.")
+def validate(config_path: str, as_json: bool, strict: bool) -> None:
     """Validate the masked database against the original (source) database.
 
     Runs three checks: row counts, schema elements, and masking completeness.
@@ -163,6 +280,9 @@ def validate(config_path: str, as_json: bool) -> None:
     with Runner(config) as runner:
         report = runner.validate()
 
+    passed = report.passed_strict if strict else report.passed
+    summary = report.summary()
+
     if as_json:
         click.echo(json.dumps([i.to_dict() for i in report.issues], indent=2))
     else:
@@ -171,11 +291,23 @@ def validate(config_path: str, as_json: bool) -> None:
             icon = icons.get(issue.status.value, "?")
             click.echo(f"[{icon}] {issue.check:22} {issue.location}: {issue.message}")
         click.echo("\n--- Validation summary ---")
-        for status, count in report.summary().items():
+        for status, count in summary.items():
             click.echo(f"  {status:8}: {count}")
-        click.echo("\nRESULT: " + ("PASSED ✓" if report.passed else "FAILED ✗"))
 
-    if not report.passed:
+        caveats = []
+        if summary.get("warning"):
+            caveats.append(f"{summary['warning']} warning(s)")
+        if summary.get("skipped"):
+            caveats.append(f"{summary['skipped']} skipped")
+        if passed and caveats and not strict:
+            click.echo(
+                f"\nRESULT: PASSED ✓ — with {', '.join(caveats)}: not everything "
+                "could be verified (use --strict to fail on this)"
+            )
+        else:
+            click.echo("\nRESULT: " + ("PASSED ✓" if passed else "FAILED ✗"))
+
+    if not passed:
         sys.exit(1)
 
 

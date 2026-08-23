@@ -5,7 +5,8 @@ OpenRouter, Together, vLLM's OpenAI server, ...) by setting ``base_url``.
 """
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from collections.abc import Sequence
+from typing import Optional
 
 from dbmask.llm.base import SYSTEM_PROMPT, LLMProvider, LLMResult
 

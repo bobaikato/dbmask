@@ -6,8 +6,9 @@ OpenAI-compatible gateway, or a local server such as Ollama / LM Studio.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Optional
 
 SYSTEM_PROMPT = (
     "You are a data privacy analyst. You identify whether a sample of column "
@@ -55,7 +56,13 @@ class LLMProvider(ABC):
 
     @staticmethod
     def build_prompt(column_name: str, sample: Sequence[str]) -> str:
-        body = "\n".join(f"- {v}" for v in sample)
+        if sample:
+            body = "\n".join(f"- {v}" for v in sample)
+        else:
+            # Metadata-only mode (llm.send_values: false): no data values are
+            # disclosed to the provider — only the column name.
+            body = ("(no values provided — the operator disabled sending "
+                    "sample values; judge from the column name alone)")
         return USER_PROMPT_TEMPLATE.format(column_name=column_name, sample=body)
 
     @staticmethod

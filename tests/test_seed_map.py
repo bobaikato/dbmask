@@ -33,6 +33,11 @@ def restore_cities():
 def _engine(seed_url: str, enabled: bool = True, seed: str = "dbmask") -> MaskingEngine:
     return MaskingEngine(
         MaskingConfig(
+            # Pairs are only recorded when values are actually written; dry
+            # runs are read-only towards the seed map (see
+            # tests/test_masking_safety.py). These tests exercise recording,
+            # so they run in apply mode.
+            dry_run=False,
             seed=seed,
             seed_map=SeedMapConfig(enabled=enabled, url=seed_url),
         )

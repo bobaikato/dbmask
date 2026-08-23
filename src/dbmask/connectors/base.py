@@ -8,8 +8,9 @@ subclassing :class:`Connector`.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -135,7 +136,7 @@ class Connector(ABC):
         raise NotImplementedError
 
     # -- context manager sugar ------------------------------------------------
-    def __enter__(self) -> "Connector":
+    def __enter__(self) -> Connector:
         self.connect()
         return self
 

@@ -157,11 +157,13 @@ class SeedStore:
                     seed_meta_table.insert().values(key="salt", value=generated)
                 )
             except IntegrityError:  # another process created it first
-                generated = conn.execute(
+                raced = conn.execute(
                     select(seed_meta_table.c.value).where(
                         seed_meta_table.c.key == "salt"
                     )
                 ).scalar()
+                if raced is not None:
+                    generated = str(raced)
             return generated
 
     def close(self) -> None:
@@ -175,7 +177,7 @@ class SeedStore:
             raise RuntimeError("SeedStore not connected. Call connect() first.")
         return self.engine
 
-    def __enter__(self) -> "SeedStore":
+    def __enter__(self) -> SeedStore:
         self.connect()
         return self
 
@@ -192,7 +194,7 @@ class SeedStore:
         identically — that is what lets an existing pair be found again.
         """
         digest = hashlib.sha256(
-            f"{self.salt}|{scope}|{value}".encode("utf-8")
+            f"{self.salt}|{scope}|{value}".encode()
         ).hexdigest()
         return digest, digest[:16]
 
