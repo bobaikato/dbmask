@@ -16,34 +16,38 @@ in a masking tool — "it said dry-run but wrote", "it said masked but didn't",
 "it said verified but skipped". Upgrading before any real use is strongly
 recommended.
 
+### Security
+
+   - **`dbmask mask` without `--apply` could write to the database** while
+     printing "DRY-RUN (no changes written)" when the config set
+     `masking.dry_run: false`. The CLI flag is now the single source of
+     truth. Tracked as
+     [GHSA-2jwm-hcfc-72xm](https://github.com/sealandseacat/dbmask/security/advisories/GHSA-2jwm-hcfc-72xm).
+    
 ### Fixed
 
-- **`dbmask mask` without `--apply` could write to the database.** The flag
-  only ever switched dry-run *off*, so a config with `masking.dry_run: false`
-  wrote masked values while the CLI printed "DRY-RUN (no changes written)".
-  The flag is now the single source of truth: no `--apply`, no writes.
 - **Masking no longer proceeds on an incomplete scan.** Columns whose
   analysis raised were silently left unmasked while the command exited 0.
   Masking now fails closed (`ScanIncompleteError` / exit 2) unless
   `--allow-partial` is passed explicitly; `dbmask scan` exits 3 when it could
-  not analyze every column.
+  not analyze every column. [#6]
 - **"Could not tell" is no longer recorded as "not sensitive".**
   Inconclusive columns (no pattern match, LLM off — e.g. empty tables) were
   stored as safe with confidence 0.5 and reused from history forever. They
   are now `UNKNOWN`: never persisted, never masked, and surfaced by both
-  `scan` ("Needs review") and `mask` (explicit warning listing each one).
+  `scan` ("Needs review") and `mask` (explicit warning listing each one). [#7]
 - **Sensitive primary-key columns are no longer silently skipped.** The
   engine planned them, the preview showed them masked — but the UPDATE never
   touched them. They are now excluded up front and reported loudly
-  (`TableMaskResult.skipped_columns`, CLI "NOT MASKED — primary-key column").
+  (`TableMaskResult.skipped_columns`, CLI "NOT MASKED — primary-key column"). [#8]
 - **Dry runs no longer write to the seed map.** Previews had a persistent
   side effect (recording original→masked pairs). Dry runs are now read-only;
-  determinism keeps the preview identical to what `--apply` later writes.
+  determinism keeps the preview identical to what `--apply` later writes. [#9]
 - **`llm.api_style` is now actually configurable.** `LocalProvider` supported
   OpenAI-style local servers (LM Studio, vLLM) but the config field did not
-  exist and the factory never passed it.
+  exist and the factory never passed it. [#12]
 - **Validation reports no longer leak sensitive values.** FAIL details carry
-  shape-redacted samples plus row keys instead of the original values.
+  shape-redacted samples plus row keys instead of the original values. [#11]
 
 ### Changed
 
@@ -64,7 +68,7 @@ recommended.
   `date`/`date_of_birth` → `fake_date` (deterministic ±30–730-day shift,
   always a real calendar date). `format_random`/`shuffle` now preserve the
   Python type of ints, floats, Decimals, dates, datetimes, UUIDs and
-  booleans instead of returning strings.
+  booleans instead of returning strings. [#10]
 - **Mask previews redact original values by default** (shape-only, e.g.
   `***-**`); pass `--show-values` to display them. Keeps PII out of
   terminals, scrollback and CI logs.
@@ -147,3 +151,11 @@ First public release.
 [Unreleased]: https://github.com/sealandseacat/dbmask/compare/v0.1.1...HEAD
 [0.1.1]: https://github.com/sealandseacat/dbmask/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/sealandseacat/dbmask/releases/tag/v0.1.0
+[#6]: https://github.com/sealandseacat/dbmask/issues/6
+[#7]: https://github.com/sealandseacat/dbmask/issues/7
+[#8]: https://github.com/sealandseacat/dbmask/issues/8
+[#9]: https://github.com/sealandseacat/dbmask/issues/9
+[#10]: https://github.com/sealandseacat/dbmask/issues/10
+[#11]: https://github.com/sealandseacat/dbmask/issues/11
+[#12]: https://github.com/sealandseacat/dbmask/issues/12
+[GHSA-2jwm-hcfc-72xm]: https://github.com/sealandseacat/dbmask/security/advisories/GHSA-2jwm-hcfc-72xm
