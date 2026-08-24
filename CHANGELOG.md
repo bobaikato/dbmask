@@ -88,7 +88,7 @@ recommended.
 - `--allow-partial` (mask) and `--show-values` (mask) flags.
 - Strategies: `fake_uuid`, `fake_ip`, `fake_credit_card`, `fake_date`,
   `fake_email_keep_domain`.
-- 57 new regression tests (121 total), most driving the real CLI against
+- 75 new regression tests (121 total), most driving the real CLI against
   real config files and throwaway SQLite databases.
 
 ### Upgrade notes
