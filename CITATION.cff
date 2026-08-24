@@ -2,8 +2,7 @@
 # academic and technical work. GitHub renders a "Cite this repository"
 # button from it; Zenodo reads it when archiving releases.
 #
-# After the first Zenodo archive is created, add its concept DOI here:
-#   doi: 10.5281/zenodo.XXXXXXX
+#   DOI 10.5281/zenodo.22083801
 cff-version: 1.2.0
 message: "If you use dbmask in your work, please cite it as below."
 type: software
