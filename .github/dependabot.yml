@@ -7,6 +7,9 @@ updates:
     groups:
       dev-dependencies:
         dependency-type: development
+     ignore:
+      - dependency-name: "mypy"
+        versions: [">=2"]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
