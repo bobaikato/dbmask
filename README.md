@@ -5,7 +5,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/dbmask)](https://pypi.org/project/dbmask/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22083802.svg)](https://doi.org/10.5281/zenodo.22083802)
-After the OpenSSF Best Practices application, add its badge here. -->
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14225/badge)](https://www.bestpractices.dev/projects/14225)
 
 **Discover which columns hold sensitive data, mask them with realistic
 deterministic fakes, then verify the masking actually happened — one
