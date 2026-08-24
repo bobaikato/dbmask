@@ -9,7 +9,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 Nothing yet.
 
-## [0.1.1] - 2026-08-21
+## [0.1.1] - 2026-08-24
 
 Safety release: a top-to-bottom review of the failure modes that matter most
 in a masking tool — "it said dry-run but wrote", "it said masked but didn't",
