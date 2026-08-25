@@ -34,9 +34,7 @@ def _connector(db_path: Path) -> SQLConnector:
     cfg = DatabaseConfig(
         url=f"sqlite:///{db_path}", name="paging", connect_args={"timeout": 1}
     )
-    c = SQLConnector(cfg)
-    c.connect()
-    return c
+    return SQLConnector(cfg)
 
 
 def _engine() -> MaskingEngine:
@@ -71,13 +69,10 @@ def big_db(tmp_path: Path) -> Path:
 
 def test_apply_on_table_larger_than_one_batch(big_db):
     """Masking a multi-page SQLite table must complete and mask every row."""
-    connector = _connector(big_db)
-    try:
+    with _connector(big_db) as connector:
         result = _engine().mask_table(
             connector, "main", "users", [_email_decision()], batch_size=BATCH_SIZE
         )
-    finally:
-        connector.close()
 
     assert result.rows_scanned == ROWS
     assert result.rows_written == ROWS
@@ -99,13 +94,10 @@ def test_apply_is_deterministic_across_pages(big_db):
     conn.commit()
     conn.close()
 
-    connector = _connector(big_db)
-    try:
+    with _connector(big_db) as connector:
         _engine().mask_table(
             connector, "main", "users", [_email_decision()], batch_size=BATCH_SIZE
         )
-    finally:
-        connector.close()
 
     conn = sqlite3.connect(big_db)
     first, last = (
@@ -119,14 +111,11 @@ def test_apply_is_deterministic_across_pages(big_db):
 # -- keyset pagination correctness ---------------------------------------------
 
 def test_iter_pages_covers_every_row_exactly_once(big_db):
-    connector = _connector(big_db)
-    try:
+    with _connector(big_db) as connector:
         seen: list[int] = []
         for page in connector.iter_pages("main", "users", ["id"], batch_size=BATCH_SIZE):
             assert 0 < len(page) <= BATCH_SIZE
             seen.extend(row["id"] for row in page)
-    finally:
-        connector.close()
 
     assert len(seen) == ROWS
     assert seen == sorted(set(seen)), "pages must be disjoint and key-ordered"
@@ -154,8 +143,7 @@ def test_iter_pages_composite_key_across_page_boundary(tmp_path):
     conn.commit()
     conn.close()
 
-    connector = _connector(db)
-    try:
+    with _connector(db) as connector:
         seen = [
             (row["day"], row["seq"])
             for page in connector.iter_pages(
@@ -163,19 +151,14 @@ def test_iter_pages_composite_key_across_page_boundary(tmp_path):
             )  # boundary lands mid-run: (day1: 0,1,2) (day1: 3,4 + day2: 0) ...
             for row in page
         ]
-    finally:
-        connector.close()
 
     assert seen == [(day, seq) for day, seq, _ in rows]
 
 
 def test_iter_pages_without_key_columns_raises(big_db):
-    connector = _connector(big_db)
-    try:
+    with _connector(big_db) as connector:
         with pytest.raises(ValueError, match="no key columns"):
             next(iter(connector.iter_pages("main", "users", [], batch_size=10)))
-    finally:
-        connector.close()
 
 
 # -- keyless tables -------------------------------------------------------------
@@ -195,27 +178,21 @@ def keyless_db(tmp_path: Path) -> Path:
 
 
 def test_dry_run_still_works_without_a_primary_key(keyless_db):
-    connector = _connector(keyless_db)
     engine = MaskingEngine(
         MaskingConfig(dry_run=True, seed="paging", seed_map=SeedMapConfig(enabled=False))
     )
-    try:
+    with _connector(keyless_db) as connector:
         result = engine.mask_table(
             connector, "main", "notes", [_email_decision("notes")], batch_size=2
         )
-    finally:
-        connector.close()
     assert result.rows_scanned == 5
     assert result.rows_written == 0
     assert result.preview  # previewing must not require keys
 
 
 def test_apply_without_a_primary_key_fails_cleanly(keyless_db):
-    connector = _connector(keyless_db)
-    try:
+    with _connector(keyless_db) as connector:
         with pytest.raises(ValueError, match="no key columns"):
             _engine().mask_table(
                 connector, "main", "notes", [_email_decision("notes")], batch_size=2
             )
-    finally:
-        connector.close()

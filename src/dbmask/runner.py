@@ -190,15 +190,11 @@ class Runner:
         )
         schemas = self.connector.list_schemas()
 
-        source = SQLConnector(self.config.source_database)
-        source.connect()
-        try:
+        with SQLConnector(self.config.source_database) as source:
             return validator.validate(
                 source=source,
                 target=self.connector,
                 schemas=schemas,
                 sensitive_columns=sensitive,
             )
-        finally:
-            source.close()
 

@@ -58,18 +58,14 @@ def _pk_db(tmp_path: Path) -> Path:
 
 def test_sensitive_pk_column_is_reported_not_silently_dropped(tmp_path):
     db = _pk_db(tmp_path)
-    connector = SQLConnector(DatabaseConfig(url=f"sqlite:///{db}", name="t"))
-    connector.connect()
     engine = MaskingEngine(
         MaskingConfig(dry_run=False, seed="s", seed_map=SeedMapConfig(enabled=False))
     )
-    try:
+    with SQLConnector(DatabaseConfig(url=f"sqlite:///{db}", name="t")) as connector:
         result = engine.mask_table(
             connector, "main", "accounts",
             [_decision("accounts", "email"), _decision("accounts", "holder", "full_name")],
         )
-    finally:
-        connector.close()
 
     assert [p.column for p in result.skipped_columns] == ["email"]
     assert [p.column for p in result.columns] == ["holder"]
@@ -87,17 +83,13 @@ def test_sensitive_pk_column_is_reported_not_silently_dropped(tmp_path):
 
 def test_only_pk_sensitive_masks_nothing_but_says_so(tmp_path):
     db = _pk_db(tmp_path)
-    connector = SQLConnector(DatabaseConfig(url=f"sqlite:///{db}", name="t"))
-    connector.connect()
     engine = MaskingEngine(
         MaskingConfig(dry_run=False, seed="s", seed_map=SeedMapConfig(enabled=False))
     )
-    try:
+    with SQLConnector(DatabaseConfig(url=f"sqlite:///{db}", name="t")) as connector:
         result = engine.mask_table(
             connector, "main", "accounts", [_decision("accounts", "email")]
         )
-    finally:
-        connector.close()
     assert result.skipped_columns and not result.columns
     assert result.rows_written == 0
 

@@ -7,6 +7,7 @@ the same code path a user hits, including config loading.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -47,11 +48,8 @@ def make_sample_db(path: Path) -> None:
 
 
 def read_column(db_path: Path, column: str, table: str = "customers") -> list:
-    conn = sqlite3.connect(db_path)
-    try:
+    with closing(sqlite3.connect(db_path)) as conn:
         return [r[0] for r in conn.execute(f"SELECT {column} FROM {table}")]  # noqa: S608
-    finally:
-        conn.close()
 
 
 @pytest.fixture()
