@@ -41,15 +41,15 @@ class Connector(ABC):
 
     @abstractmethod
     def list_schemas(self) -> list[str]:
-        ...
+        """Return the names of the schemas available in this database."""
 
     @abstractmethod
     def list_tables(self, schema: str) -> list[str]:
-        ...
+        """Return the table names in ``schema``."""
 
     @abstractmethod
     def list_columns(self, schema: str, table: str) -> list[str]:
-        ...
+        """Return the column names of ``schema.table``."""
 
     @abstractmethod
     def sample_values(
@@ -103,7 +103,7 @@ class Connector(ABC):
 
     @abstractmethod
     def primary_key_columns(self, schema: str, table: str) -> list[str]:
-        ...
+        """Return the primary-key column names of ``schema.table``, empty if none."""
 
     # -- validation support (optional; default implementations raise) ---------
     # These power the `validate` command. SQLConnector implements them; custom

@@ -271,12 +271,6 @@ class SQLConnector(Connector):
         """
         inspector = inspect(self._require_engine())
 
-        def _norm_cols(items, key="column_names"):
-            return [
-                {k: (sorted(v) if isinstance(v, list) else v) for k, v in item.items()}
-                for item in items
-            ]
-
         columns = {
             c["name"]: str(c.get("type")) for c in inspector.get_columns(table, schema=schema)
         }

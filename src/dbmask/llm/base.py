@@ -52,7 +52,7 @@ class LLMProvider(ABC):
 
     @abstractmethod
     def classify(self, column_name: str, sample: Sequence[str]) -> LLMResult:
-        ...
+        """Classify ``column_name`` from ``sample`` values and return an ``LLMResult``."""
 
     @staticmethod
     def build_prompt(column_name: str, sample: Sequence[str]) -> str:
