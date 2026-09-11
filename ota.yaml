@@ -187,7 +187,7 @@ agent:
       note: Install the exact reviewed unreleased Ota revision only for this advisory pressure lane.
       source:
         kind: git_rev
-        rev: 21077abf9d861e664f98bd8c460772be3930eec1
+        rev: 012739b598fd2e7821cd1129f4144693080a7afb
   notes: |
     Use `ota tasks --safe --use` before selecting agent work. The PostgreSQL pressure workflow is
     CI/operator-only because it recreates disposable external databases; it is non-blocking and
