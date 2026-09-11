@@ -27,6 +27,12 @@ config/dbmask.fields.yaml
 dbmask_history.db
 dbmask_seedmap.db
 
+# Ota local runtime artifacts
+.ota/state/*
+.ota/contracts/*
+.ota/receipts/*
+.ota/proof/*
+
 # Editors / OS
 .vscode/
 .idea/
