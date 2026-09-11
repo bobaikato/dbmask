@@ -119,7 +119,43 @@ tasks:
       network: true
       network_kind: integration_test
       external_state: [postgres]
+    depends_on: [postgres:assert-dry-run]
+
+  postgres:assert-dry-run:
+    description: Assert that the PostgreSQL masking dry run leaves both synthetic databases unchanged
+    notes: |
+      Queries the seeded source and target directly after the dry run and requires their observed
+      rows to equal the retained synthetic fixture. This proves the observed postcondition, not
+      the absence of transient database activity or every possible PostgreSQL side effect.
+    category: verify
+    command:
+      exe: python
+      args: [".github/ota/postgres_fixture.py", "assert-dry-run"]
+    requirements:
+      toolchains: [python]
+      env: [DBMASK_SOURCE_URL, DBMASK_TARGET_URL]
+    effects:
+      network: true
+      network_kind: integration_test
     depends_on: [postgres:dry-run]
+
+  postgres:assert-apply:
+    description: Assert source preservation and targeted synthetic masking after apply
+    notes: |
+      Queries both synthetic databases directly after apply. It requires the source, target
+      primary keys, and target non-sensitive account status to remain unchanged, while each
+      expected sensitive target value differs from its source value.
+    category: verify
+    command:
+      exe: python
+      args: [".github/ota/postgres_fixture.py", "assert-apply"]
+    requirements:
+      toolchains: [python]
+      env: [DBMASK_SOURCE_URL, DBMASK_TARGET_URL]
+    effects:
+      network: true
+      network_kind: integration_test
+    depends_on: [postgres:apply]
 
   postgres:validate:
     description: Strictly validate the masked synthetic PostgreSQL target against its source copy
@@ -136,16 +172,78 @@ tasks:
     effects:
       network: true
       network_kind: integration_test
-    depends_on: [postgres:apply]
+    depends_on: [postgres:assert-apply]
+
+  postgres:restore-negative-control:
+    description: Restore one original synthetic sensitive value after strict validation
+    notes: |
+      CI/operator-only. Restores one known synthetic full name in the disposable target after
+      the positive strict-validation control, creating a deliberate negative control for the
+      following strict-validation refusal.
+    category: test
+    command:
+      exe: python
+      args: [".github/ota/postgres_fixture.py", "restore-sensitive-negative-control"]
+    requirements:
+      toolchains: [python]
+      env: [DBMASK_SOURCE_URL, DBMASK_TARGET_URL]
+    effects:
+      network: true
+      network_kind: integration_test
+      external_state: [postgres]
+    depends_on: [postgres:validate]
+
+  postgres:strict-negative-control:
+    description: Require strict validation to reject the restored synthetic sensitive value
+    notes: |
+      Runs dbmask strict validation after the deliberate synthetic restoration and fails if the
+      command succeeds. This proves one real masking-completeness negative control only.
+    category: verify
+    script: |
+      report="$(mktemp)"
+      trap 'rm -f "$report"' EXIT
+      set +e
+      python -m dbmask.cli validate --config .github/ota/dbmask-postgres.yaml --strict --json >"$report"
+      exit_code=$?
+      set -e
+      if [ "$exit_code" -ne 1 ]; then
+        echo "strict validation did not return the expected masking-completeness refusal" >&2
+        cat "$report" >&2
+        exit 1
+      fi
+      python - "$report" <<'PY'
+      import json
+      import sys
+
+      report = json.load(open(sys.argv[1], encoding="utf-8"))
+      non_pass = [entry for entry in report if entry["status"] != "pass"]
+      expected = {
+          "check": "masking_completeness",
+          "status": "fail",
+          "location": "public.customers.full_name",
+      }
+      if len(non_pass) != 1 or any(non_pass[0].get(key) != value for key, value in expected.items()):
+          raise SystemExit("strict validation did not report the restored full_name masking failure")
+      if non_pass[0].get("detail", {}).get("unmasked_rows") != 1:
+          raise SystemExit("strict validation did not report exactly one restored sensitive value")
+      PY
+    requirements:
+      toolchains: [python]
+      env: [DBMASK_SOURCE_URL, DBMASK_TARGET_URL]
+    effects:
+      network: true
+      network_kind: integration_test
+    depends_on: [postgres:restore-negative-control]
 
   postgres:verify:
     description: Run the bounded disposable PostgreSQL backend proof
     notes: |
-      Aggregates seed, scan, dry run, apply, and strict validation for one PostgreSQL 16.10
-      synthetic lane. It is non-blocking pressure evidence, not repository-wide backend proof.
+      Aggregates seed, scan, dry run, apply, direct state assertions, strict validation, and one
+      strict-validation negative control for PostgreSQL 16.10 synthetic data. It is non-blocking
+      pressure evidence, not repository-wide backend proof.
     category: verify
     aggregate:
-      tasks: [postgres:validate]
+      tasks: [postgres:strict-negative-control]
 
 workflows:
   default: contributor

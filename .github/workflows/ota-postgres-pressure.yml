@@ -104,7 +104,7 @@ jobs:
       - name: Preview the selected PostgreSQL graph
         shell: bash
         run: ota up --workflow postgres-pressure --native --dry-run . --json > ota-pressure/postgresql/up-dry-run.json
-      - name: Exercise disposable PostgreSQL scan, dry run, apply, and strict validation
+      - name: Exercise disposable PostgreSQL state and strict-validation controls
         shell: bash
         run: ota run postgres:verify --native --stream . 2>&1 | tee ota-pressure/postgresql/postgres-verify.txt
       - name: Retain PostgreSQL evidence
